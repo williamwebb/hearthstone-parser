@@ -1,0 +1,17 @@
+version: 2
+jobs:
+   build:
+     docker:
+       - image: circleci/openjdk:8-jdk
+     steps:
+       - checkout
+       - run: ./gradlew clean build
+deployment:
+  snapshot:
+    branch: master
+    commands:
+      -
+  release:
+    tag: /v[0-9]+(\.[0-9]+)*/
+    commands:
+      -
