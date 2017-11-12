@@ -1,4 +1,4 @@
-hearthstone-parser | [![maven](https://maven-badges.herokuapp.com/maven-central/io.williamwebb.hearthstone/parser/badge.svg)]() [![CircleCI](https://circleci.com/gh/williamwebb/hearthstone-parser.svg?style=svg)](https://circleci.com/gh/williamwebb/hearthstone-parser)
+hearthstone-parser | [![Release](https://jitpack.io/v/io.williamwebb/hearthstone-parser.svg)](https://jitpack.io/#io.williamwebb/hearthstone-parser) [![CircleCI](https://circleci.com/gh/williamwebb/hearthstone-parser.svg?style=svg)](https://circleci.com/gh/williamwebb/hearthstone-parser)
 ============
 
 hearthstone log parser
@@ -25,6 +25,19 @@ parser.start() // start parsing
 parser.stop() // stop parsing
 ```
 
+Usage
+=====
+```
+// Add the JitPack repo
+repositories {
+    maven { url 'https://jitpack.io' }
+}
+
+// Add dependency
+dependencies {
+    compile 'io.williamwebb:hearthstone-parser:<version>'
+}
+```
 License
 -------
 
