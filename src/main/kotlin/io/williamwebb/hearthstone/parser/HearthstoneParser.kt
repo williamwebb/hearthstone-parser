@@ -14,7 +14,7 @@ import io.williamwebb.hearthstone.parser.parsers.power.PowerParser
  */
 class HearthstoneParser(clazz: Class<LogReader>, path: String, cardDb: io.williamwebb.hearthstone.parser.CardDb) {
 
-    private val power = PowerParser(LogReader.observe(clazz, path + POWER_FILE, listOf("tag=GOLD_REWARD_STATE", "End Spectator")), cardDb)
+    val power = PowerParser(LogReader.observe(clazz, path + POWER_FILE, listOf("tag=GOLD_REWARD_STATE", "End Spectator")), cardDb)
     val arena = ArenaParser(LogReader.observe(clazz, path + ARENA_FILE, emptyList()), cardDb)
     val loading = LoadingScreenParser(LogReader.observe(clazz, path + LOADING_FILE, emptyList()))
 
