@@ -25,7 +25,7 @@ parser.start() // start parsing
 parser.stop() // stop parsing
 ```
 
-Usage
+Installation
 =====
 ```
 // Add the JitPack repo

@@ -9,8 +9,8 @@ import java.util.*
 class Game(
         @JvmField internal val gameEntity: Entity,
         @JvmField internal val entityMap: MutableMap<String, Entity>,
-        @JvmField val player: Player,
-        @JvmField val opponent: Player) {
+        @JvmField var player: Player,
+        @JvmField var opponent: Player) {
 
     @JvmField val playerMap = mapOf(
             player.entity.PlayerID to player,

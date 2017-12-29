@@ -3,6 +3,7 @@ package io.williamwebb.hearthstone.parser.parsers.power
 import io.reactivex.disposables.Disposable
 import io.reactivex.subjects.PublishSubject
 import io.reactivex.subjects.Subject
+import io.williamwebb.hearthstone.parser.GameLogic
 import io.williamwebb.hearthstone.parser.GameLogic.entityRevealed
 import io.williamwebb.hearthstone.parser.GameLogic.tagChanged
 import io.williamwebb.hearthstone.parser.logreader.LogReader
@@ -116,6 +117,7 @@ class PowerParser(private val logReader: LogReader, private val cardDb: io.willi
             mNodeStack.add(node)
         } catch (e: Exception) {
             Logger.e(e)
+            mCurrentNode = null
         }
     }
 
@@ -161,31 +163,33 @@ class PowerParser(private val logReader: LogReader, private val cardDb: io.willi
 
         if (line.startsWith("CREATE_GAME")) {
             if (initialized) {
-                Logger.d("CREATE_GAME during an existing one, resuming")
-            } else {
-                val entityMap = HashMap<String, Entity>()
-                for (child in node.children) {
-                    if ((GameEntityPattern.matcher(child.line).apply { m = this }).matches()) {
-                        val EntityID = m.group(1)
-                        val entity = Entity(EntityID)
-                        entity.tags.putAll(getNodeTags(child))
-
-                        entityMap.put(entity.EntityID, entity)
-                    } else if ((PlayerEntityPattern.matcher(child.line).apply { m = this }).matches()) {
-                        val EntityID = m.group(1)
-                        val entity = Entity(EntityID)
-                        entity.PlayerID = m.group(2)
-                        entity.tags.putAll(getNodeTags(child))
-
-                        entityMap.put(entity.EntityID, entity)
-                    }
-                }
-                mCurrentGame = io.williamwebb.hearthstone.parser.GameLogic.gameCreated(eventPublisher, entityMap)
-                initialized = true
+                // If we get disconnected or leave a spectator game mid game we will not receive an
+                // end game event, so we always recreate when create game event is received.
+                Logger.d("CREATE_GAME called during in progress game. New one will be created.")
+                GameLogic.clear(mCurrentGame)
             }
+            val entityMap = HashMap<String, Entity>()
+            for (child in node.children) {
+                if ((GameEntityPattern.matcher(child.line).apply { m = this }).matches()) {
+                    val entityID = m.group(1)
+                    val entity = Entity(entityID)
+                    entity.tags.putAll(getNodeTags(child))
+
+                    entityMap.put(entity.EntityID, entity)
+                } else if ((PlayerEntityPattern.matcher(child.line).apply { m = this }).matches()) {
+                    val entityID = m.group(1)
+                    val entity = Entity(entityID)
+                    entity.PlayerID = m.group(2)
+                    entity.tags.putAll(getNodeTags(child))
+
+                    entityMap.put(entity.EntityID, entity)
+                }
+            }
+            mCurrentGame = GameLogic.gameCreated(eventPublisher, entityMap)
+            initialized = true
         }
         if(!initialized) {
-            Logger.e("Not initialized!")
+            Logger.e("Not initialized! Line: " + line)
             return
         }
 
@@ -269,7 +273,7 @@ class PowerParser(private val logReader: LogReader, private val cardDb: io.willi
         if (Entity.ENTITY_ID_GAME == entity.EntityID && game.started) {
             if (Entity.KEY_STEP == key) {
                 if (Entity.STEP_FINAL_GAMEOVER == newValue) {
-                    io.williamwebb.hearthstone.parser.GameLogic.gameEnd(eventPublisher, game)
+                    GameLogic.gameEnd(eventPublisher, game)
                     initialized = false
                 }
             }

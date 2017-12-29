@@ -6,6 +6,7 @@ import io.williamwebb.hearthstone.parser.models.Game
 import io.williamwebb.hearthstone.parser.models.Play
 import io.williamwebb.hearthstone.parser.models.Player
 import io.williamwebb.hearthstone.parser.parsers.power.PowerParser
+import io.williamwebb.hearthstone.parser.parsers.power.PowerParser.Event.*
 import log.Logger
 
 /**
@@ -30,7 +31,7 @@ object GameLogic {
         Logger.d("%s played %s", if (play.isOpponent) "opponent" else "I", play.cardId)
 
         game.plays.add(play)
-        publisher.onNext(PowerParser.Event.ENTITY_PLAYED(entity, play))
+        publisher.onNext(ENTITY_PLAYED(entity, play))
     }
 
     fun gameCreated(publisher: Subject<PowerParser.Event>, entityMap: MutableMap<String, Entity>): Game {
@@ -41,25 +42,31 @@ object GameLogic {
 
         for (entity in entityMap.values) {
             if (entity.PlayerID != null) {
-                Logger.d("adding player " + entity.PlayerID!!)
-                if (entity.PlayerID == "1") {
-                    player = Player("1", entity)
-                } else {
-                    opponent = Player("2", entity)
+                Logger.d("adding player " + entity.PlayerID!! + entity.EntityID)
+                when(entity.PlayerID) {
+                    "1" -> player = Player("1", entity)
+                    else -> opponent = Player("2", entity)
                 }
             } else if (Entity.ENTITY_ID_GAME == entity.EntityID) {
                 gameEntity = entity
             }
         }
 
-        publisher.onNext(PowerParser.Event.GAME_CREATED(gameEntity!!, entityMap, player!!, opponent!!))
+        publisher.onNext(GAME_CREATED(gameEntity!!, entityMap, player!!, opponent!!))
+
+        // TODO: we can do better... player & opponent may be opposite depending on who goes first. Not known until after mulligan
         return Game(gameEntity, entityMap, player, opponent)
     }
 
     fun gameEnd(publisher: Subject<PowerParser.Event>, game: Game) {
         val victory = Entity.PLAYSTATE_WON == game.player.entity.tags[Entity.KEY_PLAYSTATE]
-        publisher.onNext(PowerParser.Event.GAME_END(game, victory))
+        publisher.onNext(GAME_END(game, victory))
 
+        clear(game)
+    }
+
+    fun clear(game: Game?) {
+        if(game == null) return
         val player1 = game.playerMap["1"]
         val player2 = game.playerMap["2"]
 
@@ -75,12 +82,12 @@ object GameLogic {
     }
 
     fun entityRevealed(publisher: Subject<PowerParser.Event>, game: Game, entity: Entity) {
-        publisher.onNext(PowerParser.Event.ENTITY_REVEALED(entity))
+        publisher.onNext(ENTITY_REVEALED(entity))
         game.findController(entity)?.notifyListeners()
     }
 
     fun entityCreated(publisher: Subject<PowerParser.Event>, game: Game, entity: Entity) {
-        publisher.onNext(PowerParser.Event.ENTITY_CREATED(entity))
+        publisher.onNext(ENTITY_CREATED(entity))
 
         val playerId = entity.tags[Entity.KEY_CONTROLLER]
         val cardType = entity.tags[Entity.KEY_CARDTYPE]
@@ -158,8 +165,15 @@ object GameLogic {
              */
             Logger.d(battleTag + " now points to entity " + player.entity.EntityID)
             game.entityMap.put(battleTag, player.entity)
+
+            if(player.isOpponent) {
+                game.opponent = player
+            } else {
+                game.player = player
+            }
         }
-        publisher.onNext(PowerParser.Event.MULLIGAN_START())
+
+        publisher.onNext(MULLIGAN_START())
     }
 
     private fun gameStepEndMulligan(publisher: Subject<PowerParser.Event>, game: Game, entity: String) {
@@ -169,7 +183,7 @@ object GameLogic {
         player.inMulligan = false
         player.notifyListeners()
 
-        publisher.onNext(PowerParser.Event.MULLIGAN_END())
+        publisher.onNext(MULLIGAN_END())
     }
 
     fun tagChanged(publisher: Subject<PowerParser.Event>, game: Game, entityName: String, entity: Entity, key: String, oldValue: String?, newValue: String?) {
@@ -185,11 +199,11 @@ object GameLogic {
 
             if (Entity.KEY_STEP == key) {
                 if (Entity.STEP_BEGIN_MULLIGAN == newValue) {
-                    io.williamwebb.hearthstone.parser.GameLogic.gameStepBeginMulligan(publisher, game)
+                    GameLogic.gameStepBeginMulligan(publisher, game)
                 }
             }
         } else if (key == Entity.MULLIGAN_TAG_KEY && newValue == Entity.MULLIGAN_TAG_DONE) {
-            io.williamwebb.hearthstone.parser.GameLogic.gameStepEndMulligan(publisher, game, entityName)
+            GameLogic.gameStepEndMulligan(publisher, game, entityName)
         }
 
         if (Entity.KEY_ZONE == key) {
@@ -209,13 +223,17 @@ object GameLogic {
                 entity.extra.playTurn = game.turn
             } else if (Entity.ZONE_PLAY == oldValue && Entity.ZONE_GRAVEYARD == newValue) {
                 entity.extra.diedTurn = game.turn
+            } else if (Entity.ZONE_PLAY == oldValue && Entity.ZONE_HAND == newValue) {
+                entity.extra.diedTurn = game.turn
+            } else if (Entity.ZONE_SETASIDE == oldValue && Entity.ZONE_HAND == newValue) {
+                entity.extra.diedTurn = game.turn
             } else if (Entity.ZONE_HAND == oldValue && Entity.ZONE_DECK == newValue) {
                 /**
                  * card was put back in the deck (most likely from mulligan)
                  */
                 entity.extra.drawTurn = -1
             }
-            publisher.onNext(PowerParser.Event.ENTITY_ZONE_CHANGED(entity, oldValue, newValue))
+            publisher.onNext(ENTITY_ZONE_CHANGED(entity, oldValue, newValue))
         }
         game.playerMap.forEach { (_, player) -> player.notifyListeners() }
     }

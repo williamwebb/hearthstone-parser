@@ -14,6 +14,17 @@ class LogReaderTest {
     private val raw_line = raw_time_line + " " + content_line
 
     @Test
+    fun testFindEntryPoint() {
+        val powerLog = this.javaClass.getResource("../power.log").readText()
+
+        val logline = findEntryPoint(listOf("tag=GOLD_REWARD_STATE", "End Spectator"), powerLog.lines())
+
+        System.out.println("${logline.time} " + logline.line)
+
+        assertEquals(71404455000, logline.time)
+    }
+
+    @Test
     fun testDecodeTime() {
         val decoded = toEpoch(time_line)
         assertEquals(69881618870L, decoded)

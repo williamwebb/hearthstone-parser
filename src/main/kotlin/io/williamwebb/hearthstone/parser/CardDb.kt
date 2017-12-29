@@ -1,17 +1,18 @@
 package io.williamwebb.hearthstone.parser
 
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
 import io.reactivex.Single
 import io.reactivex.schedulers.Schedulers
 import io.williamwebb.hearthstone.parser.models.Card
 import io.williamwebb.hearthstone.parser.models.Deck
 import log.Logger
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import retrofit2.Retrofit
+import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
+import retrofit2.converter.moshi.MoshiConverterFactory
+import retrofit2.http.GET
+import retrofit2.http.Path
 import java.util.*
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 
 /**
@@ -19,10 +20,15 @@ import kotlin.collections.HashMap
  */
 
 class CardDb @JvmOverloads constructor(private val cache: io.williamwebb.hearthstone.parser.CardDb.Cache, locale: Locale = Locale.getDefault()) {
-    private var sCardList: List<Card>? = null
-    private var cardMap: MutableMap<Int, Card> = HashMap()
+    private var sCardList: List<Card> = emptyList()
+    private var cardMap: Map<Int, Card> = HashMap()
     private var isReady: Boolean = false
-        private set
+
+    private val cardService = Retrofit.Builder()
+            .baseUrl("https://api.hearthstonejson.com")
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
+            .build().create(CardsService::class.java)
 
     interface Cache {
         fun save(key: String, json: String?)
@@ -41,64 +47,46 @@ class CardDb @JvmOverloads constructor(private val cache: io.williamwebb.hearths
             else -> "enUS"
         }
 
-        val cards = cache.load(io.williamwebb.hearthstone.parser.CardDb.Companion.KEY_CARDS + sLanguage)
+        val cards = cache.load(KEY_CARDS + "_" + sLanguage)
         if (cards == null) {
             refreshCards(sLanguage).blockingGet()
         } else {
-            storeCards(cards)
+            storeCards(cardsAdapter.fromJson(cards))
         }
     }
 
-    private fun storeCards(cards: String) {
-        synchronized(io.williamwebb.hearthstone.parser.CardDb.Companion.lock) {
-            val list = Gson().fromJson<List<Card>>(cards, object : TypeToken<ArrayList<Card>>() {}.type)
+    private fun storeCards(cards: List<Card>) {
+        synchronized(Companion.lock) {
 
-            Collections.sort(list) { a, b -> a.id.compareTo(b.id) }
-            sCardList = list
-            cardMap = ConcurrentHashMap()
+            Collections.sort(cards) { a, b -> a.id.compareTo(b.id) }
+            sCardList = cards
+            cardMap = cards.filter { it.dbfId != Card.UNKNOWN.dbfId }.associateBy({it.dbfId}, {it})
 
-            for (c in list) {
-                if (c.dbfId != Card.UNKNOWN.dbfId) {
-                    cardMap.put(c.dbfId, c)
-                } else {
-                    Logger.e("Card Invalid: " + c)
-                }
-            }
             isReady = true
         }
     }
 
-    fun getCards() = sCardList ?: ArrayList()
+    fun getCards() = sCardList
 
     fun getCard(key: String?): Card {
-        synchronized(io.williamwebb.hearthstone.parser.CardDb.Companion.lock) {
-            if (sCardList == null) {
-                /**
-                 * can happen the very first launch
-                 */
-                return Card.UNKNOWN
-            }
+        synchronized(Companion.lock) {
             val index = Collections.binarySearch(sCardList, key as String)
             return if (index < 0) {
                 Card.UNKNOWN
             } else {
-                sCardList!![index]
+                sCardList[index]
             }
         }
     }
 
     fun getCardDBF(key: Int?) = cardMap[key] ?: Card.UNKNOWN
 
-    private fun refreshCards(locale: String): Single<String> {
-        return Single.fromCallable<String> {
-            val endpoint = "https://api.hearthstonejson.com/v1/latest/$locale/cards.json"
-            Logger.d("refreshingCards " + endpoint)
-            val request = Request.Builder().url(endpoint).get().build()
-            val response = OkHttpClient().newCall(request).execute()
-            return@fromCallable response.takeIf { it.isSuccessful }?.body()?.string()
-        }
+    private fun refreshCards(locale: String): Single<List<Card>> {
+        println(cardService)
+        println(locale)
+        return cardService.cards(locale)
         .doAfterSuccess {
-            cache.save(io.williamwebb.hearthstone.parser.CardDb.Companion.KEY_CARDS + locale, it)
+            cache.save(KEY_CARDS + "_" + locale, cardsAdapter.toJson(it))
             storeCards(it)
         }
         .subscribeOn(Schedulers.io())
@@ -118,9 +106,16 @@ class CardDb @JvmOverloads constructor(private val cache: io.williamwebb.hearths
         }
     }
 
+    interface CardsService {
+        @GET("v1/latest/{locale}/cards.json")
+        fun cards(@Path("locale") locale: String): Single<List<Card>>
+    }
+
     companion object {
         const val BOOK = "global"
         private val KEY_CARDS = "cards"
         private val lock = Any()
+        private val moshi = Moshi.Builder().build()
+        private val cardsAdapter = moshi.adapter<List<Card>>(Types.newParameterizedType(List::class.java, Card::class.java))
     }
 }
