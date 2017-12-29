@@ -4,6 +4,7 @@ import io.reactivex.Observable
 import io.reactivex.subjects.PublishSubject
 import log.Logger
 import java.util.concurrent.TimeUnit
+import kotlin.properties.Delegates
 
 /**
  * Created by williamwebb on 6/7/17.
@@ -13,9 +14,8 @@ abstract class LogReader(protected val path: String, private val entryPointsChoi
 
     private val publisher = PublishSubject.create<LogLine>()
 
-    private var entryPoint = LogLine()
-    private var lastLine = LogLine()
-    private var afterEntryPoint = false
+    private var entryPoint by Delegates.notNull<LogLine>()
+    private var previousLine = LogLine()
 
     data class LogLine(val line: String = "") {
         val time: Long = toEpoch(parseTime(line))
@@ -47,43 +47,27 @@ abstract class LogReader(protected val path: String, private val entryPointsChoi
         if (line.length < 18) return
         val logLine = LogLine(line)
 
-        if (!afterEntryPoint) {
-            if (logLine.time > entryPoint.time || entryPoint.time == Long.MAX_VALUE) {
-                afterEntryPoint = true
-            } else {
-                return
-            }
+        if (logLine.time <= entryPoint.time) {
+            return
         }
 
-        if (logLine.time < lastLine.time) {
-            Logger.d("Time going backwards on $path ? ${logLine.time} < ${lastLine.time}")
+        if (logLine.time < previousLine.time) {
+            Logger.d("Time going backwards on $path ? ${logLine.time} < ${previousLine.time}")
         }
 
-        publisher.onNext(logLine.apply { lastLine = this })
+        publisher.onNext(logLine.apply { previousLine = this })
     }
 
     fun observe(): Observable<LogLine> = publisher
             .doOnSubscribe { start() }
             .doOnDispose({ stop() })
 
-    private fun findEntryPoint(choices: List<String>, input: List<String>): LogLine {
-        input.reversed().forEach { line ->
-            choices.forEach { choice ->
-                if (line.contains(choice)) {
-                    return LogLine(line)
-                }
-            }
-        }
-        return LogLine()
-    }
     companion object {
         fun <T: LogReader> observe(clazz: Class<T>, path: String, entryPointsChoices: List<String> = emptyList()): T {
             return clazz.getConstructor(String::class.java, List::class.java).newInstance(path, entryPointsChoices)
         }
     }
 }
-
-
 
 private val splitter = "[^0-9]".toRegex()
 private val time_range = 2..17
@@ -92,14 +76,29 @@ internal fun parseTime(line: String) = line.takeIf { line.length > time_range.la
 internal fun parseContent(line: String) = line.takeIf { line.length > 19 }?.substring(19) ?: ""
 
 internal fun toEpoch(timeString: String): Long {
-    if (timeString.isEmpty()) return Long.MAX_VALUE
+    if (timeString.isEmpty()) return 0
     val (hours, minutes, seconds, micro) = timeString
             .split(splitter)
             .takeIf { it.size == 4 }
-            ?: return Long.MAX_VALUE
+            ?: return 0
 
     return (TimeUnit.HOURS.toMicros(hours.toLong())) +
             TimeUnit.MINUTES.toMicros(minutes.toLong()) +
             TimeUnit.SECONDS.toMicros(seconds.toLong()) +
             micro.toLong()
+}
+
+internal fun findEntryPoint(choices: List<String>, input: List<String>): LogReader.LogLine {
+    input.reversed().forEach { line ->
+        choices.forEach { choice ->
+            if (line.contains(choice)) {
+                return LogReader.LogLine(line)
+            }
+        }
+    }
+    return if(input.isEmpty()) {
+        LogReader.LogLine()
+    } else {
+        LogReader.LogLine(input.reversed()[0])
+    }
 }

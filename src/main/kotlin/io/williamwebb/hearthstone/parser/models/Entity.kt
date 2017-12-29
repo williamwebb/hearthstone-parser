@@ -50,6 +50,7 @@ class Entity(@JvmField var EntityID: String) {
         @JvmField val ZONE_PLAY = "PLAY"
         @JvmField val ZONE_GRAVEYARD = "GRAVEYARD"
         @JvmField val ZONE_SECRET = "SECRET"
+        @JvmField val ZONE_SETASIDE = "SETASIDE"
 
         @JvmField val CARDTYPE_HERO = "HERO"
         @JvmField val CARDTYPE_HERO_POWER = "HERO_POWER"

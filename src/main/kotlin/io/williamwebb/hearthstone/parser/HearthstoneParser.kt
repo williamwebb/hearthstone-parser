@@ -8,11 +8,30 @@ import io.williamwebb.hearthstone.parser.parsers.GameStateHandler
 import io.williamwebb.hearthstone.parser.parsers.arena.ArenaParser
 import io.williamwebb.hearthstone.parser.parsers.loading.LoadingScreenParser
 import io.williamwebb.hearthstone.parser.parsers.power.PowerParser
+import log.Logger
+import net.mbonnin.arcanetracker.parser.logreader.FileLogReader
 
 /**
  * Created by williamwebb on 8/21/17.
  */
-class HearthstoneParser(clazz: Class<LogReader>, path: String, cardDb: io.williamwebb.hearthstone.parser.CardDb) {
+
+fun main(args : Array<String>) {
+    Logger.plant(Logger.DebugTree())
+
+    val path = "/Applications/Hearthstone/Logs/"
+
+    val cardDB = CardDb(FileCache(path))
+
+    val parser = HearthstoneParser(FileLogReader::class.java as Class<LogReader>, path, cardDB)
+    parser.power.EVENTS().subscribe {
+        Logger.d("Event: $it")
+    }
+
+    parser.start()
+    Thread.yield()
+}
+
+class HearthstoneParser(clazz: Class<LogReader>, path: String, cardDb: CardDb) {
 
     val power = PowerParser(LogReader.observe(clazz, path + POWER_FILE, listOf("tag=GOLD_REWARD_STATE", "End Spectator")), cardDb)
     val arena = ArenaParser(LogReader.observe(clazz, path + ARENA_FILE, emptyList()), cardDb)

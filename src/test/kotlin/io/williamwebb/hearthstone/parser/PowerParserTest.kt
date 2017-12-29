@@ -1,8 +1,15 @@
 package io.williamwebb.hearthstone.parser
 
+import assertk.assert
+import assertk.assertAll
+import assertk.assertions.isEqualTo
+import assertk.assertions.isTrue
 import io.reactivex.observers.TestObserver
 import io.williamwebb.hearthstone.parser.logreader.LogReader
+import io.williamwebb.hearthstone.parser.models.Game
 import io.williamwebb.hearthstone.parser.parsers.power.PowerParser
+import log.Logger
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.PrintWriter
 
@@ -11,9 +18,9 @@ import java.io.PrintWriter
  */
 class PowerParserTest {
 
-    init {
-//        Logger.plant(Logger.DebugTree())
-    }
+//    init {
+//        if(Logger.treeCount() == 0) Logger.plant(Logger.DebugTree())
+//    }
 
     val power_log = this.javaClass.getResource("power.log").readText()
     private val cardDB = io.williamwebb.hearthstone.parser.CardDb(object : io.williamwebb.hearthstone.parser.CardDb.Cache {
@@ -32,12 +39,7 @@ class PowerParserTest {
         }
     })
 
-    private val fileReader = object : LogReader("powerlog", emptyList()) {
-        override fun readEntireFile() = emptyList<String>()
-        override fun onStart() = power_log.lines().forEach { post(it) }
-        override fun onStop() { }
-    }
-
+    private val fileReader = mockReader(power_log)
     private val power = PowerParser(fileReader, cardDB)
 
     @Test
@@ -215,6 +217,72 @@ class PowerParserTest {
                 "UNG_856" to 18,
                 "OG_223" to 18
         ))
+    }
+
+    @Test
+    fun testPlayerInference1() {
+        testPlayerInference("Power_Bad_Player_Selection1.log", 0) {
+            assertAll {
+                assert(it.victory, "victory").isTrue()
+                assert(it.game.player.battleTag, "battletag").isEqualTo("jug6ernaut")
+                assert(it.game.opponent.battleTag, "battletag").isEqualTo("Netsu")
+            }
+        }
+    }
+
+    @Test
+    fun testPlayerInference2() {
+        testPlayerInference("Power_Bad_Player_Selection2.log", 0) {
+            assertAll {
+                assert(it.victory, "victory").isTrue()
+                assert(it.game.player.battleTag, "battletag").isEqualTo("jug6ernaut")
+                assert(it.game.opponent.battleTag, "battletag").isEqualTo("BigShmanger")
+            }
+        }
+    }
+
+    /**
+     * Specifically tests a log file where previous games were played, and spectator mode was used
+     * before the last game. Hence the skipCount 2.
+     */
+    @Test
+    fun testPlayerInference3() {
+        testPlayerInference("Power_Bad_Player_Selection3.log", 2) {
+            assertAll {
+                assert(it.victory, "victory").isTrue()
+                assert(it.game.player.battleTag, "battletag").isEqualTo("jug6ernaut")
+                assert(it.game.opponent.battleTag, "battletag").isEqualTo("BigShmanger")
+            }
+        }
+    }
+
+    private fun testPlayerInference(logFile: String, skipCount: Long, body: (game: PowerParser.Event.GAME_END) -> Unit) {
+        val log = this.javaClass.getResource(logFile).readText()
+        val fileReader = mockReader(log)
+        val power = PowerParser(fileReader, cardDB)
+
+        val eventObserver = TestObserver<PowerParser.Event>()
+
+        power.EVENTS()
+                .filter { it is PowerParser.Event.GAME_END}
+                .skip(skipCount)
+                .subscribe(eventObserver)
+
+        power.start()
+        fileReader.observe().subscribe()
+
+        val game = eventObserver.values()[0] as PowerParser.Event.GAME_END
+        eventObserver.assertValueCount(1)
+
+        body.invoke(game)
+    }
+
+    private fun mockReader(source: String): LogReader {
+        return object : LogReader("n/a", emptyList()) {
+            override fun readEntireFile() = emptyList<String>()
+            override fun onStart() = source.lines().forEach { post(it) }
+            override fun onStop() { }
+        }
     }
 
     private inline fun <reified T> Any.cast(t: Class<T>): T {
